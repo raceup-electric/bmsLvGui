@@ -1,7 +1,7 @@
 #!/bin/bash
 
 DBC="{$1}"
-MESSAGE="./src/gui/"
+MESSAGE="./src"
 
 if [[ -n "$1" ]]; then
     DBC="$1"

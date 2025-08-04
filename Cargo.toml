@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bitvec = "1.0.1"
 embedded-can = "0.4.1"
 raylib = "5.5.1"
 socketcan = "3.5.0"

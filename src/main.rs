@@ -1,4 +1,6 @@
 mod gui;
+mod messages;
+
 use gui::BmsLvGui;
 use std::env;
 

@@ -1,9 +1,15 @@
+use std::sync::atomic;
+use std::time::Duration;
+
+use embedded_can::Frame;
 use raylib::color::Color;
 use raylib::init;
 use raylib::prelude::RaylibDraw;
 use tokio::sync::watch::{Sender,Receiver,channel};
-use socketcan::{CanSocket, Socket};
+use socketcan::{CanSocket, Socket, SocketOptions};
 use socketcan::BlockingCan;
+
+use super::messages::*;
 
 type Volt = f32;
 
@@ -12,6 +18,7 @@ struct BmsCell{
     rx: Receiver<Volt>
 }
 
+static RUN: atomic::AtomicBool = atomic::AtomicBool::new(false);
 
 #[allow(unused)]
 pub struct BmsLvGui<const N : usize>{
@@ -19,8 +26,10 @@ pub struct BmsLvGui<const N : usize>{
     socket_can: CanSocket,
 }
 
+
 #[allow(unused)]
 impl<const N:usize> BmsLvGui<N> {
+
     
     pub async fn new(title: &'static str, w: i32, h: i32, can_node: &str) -> Self
     {
@@ -28,7 +37,18 @@ impl<const N:usize> BmsLvGui<N> {
         let cell_heidth = 100;
         let n_cell_in_a_row = 4;
 
-        let can_node = CanSocket::open(can_node).unwrap();
+        let mut can_node = CanSocket::open(can_node).unwrap();
+
+        let filters = 
+        [
+            socketcan::CanFilter::new(BmsLvCell1::MESSAGE_ID, u32::MAX ^ 0b11),
+        ];
+
+        can_node.set_filters(&filters);
+
+        
+        RUN.store(true, atomic::Ordering::Relaxed);
+
         let channels : [_; N] = std::array::from_fn(|_|{
             let (tx,rx) = channel::<Volt>(0.0);
             (tx,rx)
@@ -77,9 +97,8 @@ impl<const N:usize> BmsLvGui<N> {
                         colomn += cell_heidth;
                     }
                 }
-
-
             }
+            RUN.store(false, atomic::Ordering::Relaxed);
         });
 
         Self{tx_channels, socket_can: can_node}
@@ -90,12 +109,53 @@ impl<const N:usize> BmsLvGui<N> {
         
     }
 
-    pub fn update(&mut self)-> !{
-        loop{
-            let mut data = [0_u8;8];
+    pub fn update(&mut self){
+
+        fn get_mv(raw: u16) -> f32{
+            f32::from(raw)/10.0
+        }
+
+        let cell_enable = BmsLvCellControl::new(true).ok().unwrap();
+        let id = socketcan::StandardId::new(BmsLvCellControl::MESSAGE_ID.try_into().unwrap()).unwrap();
+        let frame = socketcan::frame::CanFrame::new(id, cell_enable.raw()).unwrap();
+        let _ = self.socket_can.transmit(&frame);
+
+
+        while RUN.load(atomic::Ordering::Relaxed){
+            self.socket_can.set_read_timeout(Duration::from_millis(500));
             let frame = self.socket_can.receive();
 
-            //TODO: update logic and mex filters
+            if let Ok(mex) = frame {
+                if let socketcan::Id::Standard(standard_id) = mex.id(){
+                    let mex = Messages::from_can_message(standard_id.as_raw().into(), mex.data()).ok().unwrap();
+                    match mex {
+                        Messages::BmsLvCell1(data) => {
+                            self.update_cell(0, get_mv(data.cell_0()));
+                            self.update_cell(1, get_mv(data.cell_1()));
+                            self.update_cell(2, get_mv(data.cell_2()));
+                            self.update_cell(3, get_mv(data.cell_3()));
+                        },
+                        Messages::BmsLvCell2(data) => {
+                            self.update_cell(4, get_mv(data.cell_4()));
+                            self.update_cell(5, get_mv(data.cell_5()));
+                            self.update_cell(6, get_mv(data.cell_6()));
+                            self.update_cell(7, get_mv(data.cell_7()));
+                        },
+                        Messages::BmsLvCell3(data) => {
+                            self.update_cell(8, get_mv(data.cell_8()));
+                            self.update_cell(9, get_mv(data.cell_9()));
+                            self.update_cell(10, get_mv(data.cell_10()));
+                            self.update_cell(11, get_mv(data.cell_12()));
+                        },
+                        _ => println!("unexpected mex"),
+                    };
+                }
+            }
         }
+
+        let cell_enable = BmsLvCellControl::new(false).ok().unwrap();
+        let id = socketcan::StandardId::new(BmsLvCellControl::MESSAGE_ID.try_into().unwrap()).unwrap();
+        let frame = socketcan::frame::CanFrame::new(id, cell_enable.raw()).unwrap();
+        let _ =self.socket_can.transmit(&frame);
     }
 }
