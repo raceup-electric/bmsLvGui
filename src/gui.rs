@@ -2,6 +2,8 @@ use raylib::color::Color;
 use raylib::init;
 use raylib::prelude::RaylibDraw;
 use tokio::sync::watch::{Sender,Receiver,channel};
+use socketcan::{CanSocket, Socket};
+use socketcan::BlockingCan;
 
 type Volt = f32;
 
@@ -13,18 +15,20 @@ struct BmsCell{
 
 #[allow(unused)]
 pub struct BmsLvGui<const N : usize>{
-    tx_channels: [Sender<Volt>;N]
+    tx_channels: [Sender<Volt>;N],
+    socket_can: CanSocket,
 }
 
 #[allow(unused)]
 impl<const N:usize> BmsLvGui<N> {
     
-    pub async fn new(title: &'static str, w: i32, h: i32) -> Self
+    pub async fn new(title: &'static str, w: i32, h: i32, can_node: &str) -> Self
     {
         let cell_width = 200;
         let cell_heidth = 100;
         let n_cell_in_a_row = 4;
 
+        let can_node = CanSocket::open(can_node).unwrap();
         let channels : [_; N] = std::array::from_fn(|_|{
             let (tx,rx) = channel::<Volt>(0.0);
             (tx,rx)
@@ -78,11 +82,20 @@ impl<const N:usize> BmsLvGui<N> {
             }
         });
 
-        Self{tx_channels}
+        Self{tx_channels, socket_can: can_node}
     }
 
     pub fn update_cell(&mut self, cell: usize, volt: Volt){
         let _ =self.tx_channels[cell].send(volt);
         
+    }
+
+    pub fn update(&mut self)-> !{
+        loop{
+            let mut data = [0_u8;8];
+            let frame = self.socket_can.receive();
+
+            //TODO: update logic and mex filters
+        }
     }
 }

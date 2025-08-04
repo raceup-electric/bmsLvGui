@@ -1,0 +1,6 @@
+[submodule "lib/dbcc"]
+	path = lib/dbcc
+	url = https://github.com/howerj/dbcc.git
+[submodule "lib/dbc"]
+	path = lib/dbc
+	url = https://github.com/raceup-electric/dbc
