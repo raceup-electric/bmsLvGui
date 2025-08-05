@@ -18,7 +18,7 @@ struct BmsCell{
     rx: Receiver<Volt>
 }
 
-static RUN: atomic::AtomicBool = atomic::AtomicBool::new(false);
+static RUN: atomic::AtomicBool = atomic::AtomicBool::new(true);
 
 #[allow(unused)]
 pub struct BmsLvGui<const N : usize>{
@@ -38,16 +38,6 @@ impl<const N:usize> BmsLvGui<N> {
         let n_cell_in_a_row = 4;
 
         let mut can_node = CanSocket::open(can_node).unwrap();
-
-        let filters = 
-        [
-            socketcan::CanFilter::new(BmsLvCell1::MESSAGE_ID, u32::MAX ^ 0b11),
-        ];
-
-        can_node.set_filters(&filters);
-
-        
-        RUN.store(true, atomic::Ordering::Relaxed);
 
         let channels : [_; N] = std::array::from_fn(|_|{
             let (tx,rx) = channel::<Volt>(0.0);
@@ -147,7 +137,7 @@ impl<const N:usize> BmsLvGui<N> {
                             self.update_cell(10, get_mv(data.cell_10()));
                             self.update_cell(11, get_mv(data.cell_12()));
                         },
-                        _ => println!("unexpected mex"),
+                        _ => println!("ignored mex"),
                     };
                 }
             }
