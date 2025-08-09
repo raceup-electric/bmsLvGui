@@ -73,7 +73,7 @@ impl<const N:usize> BmsLvGui<N> {
                     }
 
                     d.clear_background(Color::LIGHTGRAY);
-                    if cell.volt > 3000.0 && cell.volt < 4500.0 {
+                    if cell.volt > 3200.0 && cell.volt < 4250.0 {
                         cell_color = Color::GREEN;
                     }
                     d.draw_text("Bms Lv Volts", 300, 50, 32, Color::BLACK);
@@ -117,28 +117,30 @@ impl<const N:usize> BmsLvGui<N> {
 
             if let Ok(mex) = frame {
                 if let socketcan::Id::Standard(standard_id) = mex.id(){
-                    let mex = Messages::from_can_message(standard_id.as_raw().into(), mex.data()).ok().unwrap();
-                    match mex {
-                        Messages::BmsLvCell1(data) => {
-                            self.update_cell(0, get_mv(data.cell_0()));
-                            self.update_cell(1, get_mv(data.cell_1()));
-                            self.update_cell(2, get_mv(data.cell_2()));
-                            self.update_cell(3, get_mv(data.cell_3()));
-                        },
-                        Messages::BmsLvCell2(data) => {
-                            self.update_cell(4, get_mv(data.cell_4()));
-                            self.update_cell(5, get_mv(data.cell_5()));
-                            self.update_cell(6, get_mv(data.cell_6()));
-                            self.update_cell(7, get_mv(data.cell_7()));
-                        },
-                        Messages::BmsLvCell3(data) => {
-                            self.update_cell(8, get_mv(data.cell_8()));
-                            self.update_cell(9, get_mv(data.cell_9()));
-                            self.update_cell(10, get_mv(data.cell_10()));
-                            self.update_cell(11, get_mv(data.cell_12()));
-                        },
-                        _ => println!("ignored mex"),
-                    };
+                    let mex = Messages::from_can_message(standard_id.as_raw().into(), mex.data());
+                    if let Ok(mex) = mex {
+                        match mex {
+                            Messages::BmsLvCell1(data) => {
+                                self.update_cell(0, get_mv(data.cell_0()));
+                                self.update_cell(1, get_mv(data.cell_1()));
+                                self.update_cell(2, get_mv(data.cell_2()));
+                                self.update_cell(3, get_mv(data.cell_3()));
+                            },
+                            Messages::BmsLvCell2(data) => {
+                                self.update_cell(4, get_mv(data.cell_4()));
+                                self.update_cell(5, get_mv(data.cell_5()));
+                                self.update_cell(6, get_mv(data.cell_6()));
+                                self.update_cell(7, get_mv(data.cell_7()));
+                            },
+                            Messages::BmsLvCell3(data) => {
+                                self.update_cell(8, get_mv(data.cell_8()));
+                                self.update_cell(9, get_mv(data.cell_9()));
+                                self.update_cell(10, get_mv(data.cell_10()));
+                                self.update_cell(11, get_mv(data.cell_12()));
+                            },
+                            _ => println!("ignored mex"),
+                        };
+                    }
                 }
             }
         }
