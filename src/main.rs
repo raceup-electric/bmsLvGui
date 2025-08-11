@@ -1,4 +1,5 @@
 mod gui;
+#[allow(unused)]
 mod messages;
 
 use gui::BmsLvGui;

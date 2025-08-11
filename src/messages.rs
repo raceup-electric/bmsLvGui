@@ -135,6 +135,8 @@ pub enum Messages {
     BmsLvCell2(BmsLvCell2),
     /// BmsLvCell_3
     BmsLvCell3(BmsLvCell3),
+    /// BmsLvTemps
+    BmsLvTemps(BmsLvTemps),
     /// Lem
     Lem(Lem),
 }
@@ -204,6 +206,7 @@ impl Messages {
             870 => Messages::BmsLvCell1(BmsLvCell1::try_from(payload)?),
             871 => Messages::BmsLvCell2(BmsLvCell2::try_from(payload)?),
             872 => Messages::BmsLvCell3(BmsLvCell3::try_from(payload)?),
+            873 => Messages::BmsLvTemps(BmsLvTemps::try_from(payload)?),
             962 => Messages::Lem(Lem::try_from(payload)?),
             n => return Err(CanError::UnknownMessageId(n)),
         };
@@ -2287,15 +2290,15 @@ pub struct BmsLv2 {
 impl BmsLv2 {
     pub const MESSAGE_ID: u32 = 85;
     
-    pub const MAX_TEMP_MIN: u16 = 0_u16;
-    pub const MAX_TEMP_MAX: u16 = 0_u16;
-    pub const MIN_TEMP_MIN: u16 = 0_u16;
-    pub const MIN_TEMP_MAX: u16 = 0_u16;
+    pub const MAX_TEMP_MIN: f32 = 0_f32;
+    pub const MAX_TEMP_MAX: f32 = 0_f32;
+    pub const MIN_TEMP_MIN: f32 = 0_f32;
+    pub const MIN_TEMP_MAX: f32 = 0_f32;
     pub const CURRENT_MIN: f32 = 0_f32;
     pub const CURRENT_MAX: f32 = 0_f32;
     
     /// Construct new BmsLv2 from values
-    pub fn new(max_temp: u16, min_temp: u16, current: f32) -> Result<Self, CanError> {
+    pub fn new(max_temp: f32, min_temp: f32, current: f32) -> Result<Self, CanError> {
         let mut res = Self { raw: [0u8; 8] };
         res.set_max_temp(max_temp)?;
         res.set_min_temp(min_temp)?;
@@ -2315,7 +2318,7 @@ impl BmsLv2 {
     /// - Unit: "C"
     /// - Receivers: VCU
     #[inline(always)]
-    pub fn max_temp(&self) -> u16 {
+    pub fn max_temp(&self) -> f32 {
         self.max_temp_raw()
     }
     
@@ -2323,24 +2326,30 @@ impl BmsLv2 {
     ///
     /// - Start bit: 0
     /// - Signal size: 16 bits
-    /// - Factor: 1
+    /// - Factor: 0.1
     /// - Offset: 0
     /// - Byte order: LittleEndian
     /// - Value type: Unsigned
     #[inline(always)]
-    pub fn max_temp_raw(&self) -> u16 {
+    pub fn max_temp_raw(&self) -> f32 {
         let signal = self.raw.view_bits::<Lsb0>()[0..16].load_le::<u16>();
         
-        signal
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        (signal as f32) * factor + offset
     }
     
     /// Set value of max_temp
     #[inline(always)]
-    pub fn set_max_temp(&mut self, value: u16) -> Result<(), CanError> {
+    pub fn set_max_temp(&mut self, value: f32) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < 0_u16 || 0_u16 < value {
+        if value < 0_f32 || 0_f32 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 85 });
         }
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        let value = ((value - offset) / factor) as u16;
+        
         self.raw.view_bits_mut::<Lsb0>()[0..16].store_le(value);
         Ok(())
     }
@@ -2352,7 +2361,7 @@ impl BmsLv2 {
     /// - Unit: "C"
     /// - Receivers: VCU
     #[inline(always)]
-    pub fn min_temp(&self) -> u16 {
+    pub fn min_temp(&self) -> f32 {
         self.min_temp_raw()
     }
     
@@ -2360,24 +2369,30 @@ impl BmsLv2 {
     ///
     /// - Start bit: 16
     /// - Signal size: 16 bits
-    /// - Factor: 1
+    /// - Factor: 0.1
     /// - Offset: 0
     /// - Byte order: LittleEndian
     /// - Value type: Unsigned
     #[inline(always)]
-    pub fn min_temp_raw(&self) -> u16 {
+    pub fn min_temp_raw(&self) -> f32 {
         let signal = self.raw.view_bits::<Lsb0>()[16..32].load_le::<u16>();
         
-        signal
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        (signal as f32) * factor + offset
     }
     
     /// Set value of min_temp
     #[inline(always)]
-    pub fn set_min_temp(&mut self, value: u16) -> Result<(), CanError> {
+    pub fn set_min_temp(&mut self, value: f32) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < 0_u16 || 0_u16 < value {
+        if value < 0_f32 || 0_f32 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 85 });
         }
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        let value = ((value - offset) / factor) as u16;
+        
         self.raw.view_bits_mut::<Lsb0>()[16..32].store_le(value);
         Ok(())
     }
@@ -2457,8 +2472,8 @@ impl core::fmt::Debug for BmsLv2 {
 #[cfg(feature = "arb")]
 impl<'a> Arbitrary<'a> for BmsLv2 {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self, arbitrary::Error> {
-        let max_temp = u.int_in_range(0..=0)?;
-        let min_temp = u.int_in_range(0..=0)?;
+        let max_temp = u.float_in_range(0_f32..=0_f32)?;
+        let min_temp = u.float_in_range(0_f32..=0_f32)?;
         let current = u.float_in_range(0_f32..=0_f32)?;
         BmsLv2::new(max_temp,min_temp,current).map_err(|_| arbitrary::Error::IncorrectFormat)
     }
@@ -2832,8 +2847,6 @@ impl BmsHv2 {
     }
     
     /// avg_temp
-    ///
-    /// Average cell temperature in celsius
     ///
     /// - Min: 0
     /// - Max: 0
@@ -9418,13 +9431,13 @@ pub struct CsLog1 {
 impl CsLog1 {
     pub const MESSAGE_ID: u32 = 820;
     
-    pub const YR_REF_MIN: f32 = -5_f32;
-    pub const YR_REF_MAX: f32 = 5_f32;
-    pub const YAW_MOMENT_MIN: f32 = -4000_f32;
-    pub const YAW_MOMENT_MAX: f32 = 4000_f32;
+    pub const YR_REF_MIN: i32 = -5_i32;
+    pub const YR_REF_MAX: i32 = 5_i32;
+    pub const YAW_MOMENT_MIN: i32 = -4000_i32;
+    pub const YAW_MOMENT_MAX: i32 = 4000_i32;
     
     /// Construct new CsLog_1 from values
-    pub fn new(yr_ref: f32, yaw_moment: f32) -> Result<Self, CanError> {
+    pub fn new(yr_ref: i32, yaw_moment: i32) -> Result<Self, CanError> {
         let mut res = Self { raw: [0u8; 8] };
         res.set_yr_ref(yr_ref)?;
         res.set_yaw_moment(yaw_moment)?;
@@ -9443,7 +9456,7 @@ impl CsLog1 {
     /// - Unit: " rad/s"
     /// - Receivers: Vector__XXX
     #[inline(always)]
-    pub fn yr_ref(&self) -> f32 {
+    pub fn yr_ref(&self) -> i32 {
         self.yr_ref_raw()
     }
     
@@ -9451,30 +9464,26 @@ impl CsLog1 {
     ///
     /// - Start bit: 0
     /// - Signal size: 32 bits
-    /// - Factor: 0.001
+    /// - Factor: 1
     /// - Offset: 0
     /// - Byte order: LittleEndian
-    /// - Value type: Unsigned
+    /// - Value type: Signed
     #[inline(always)]
-    pub fn yr_ref_raw(&self) -> f32 {
+    pub fn yr_ref_raw(&self) -> i32 {
         let signal = self.raw.view_bits::<Lsb0>()[0..32].load_le::<u32>();
         
-        let factor = 0.001_f32;
-        let offset = 0_f32;
-        (signal as f32) * factor + offset
+        let signal  = i32::from_ne_bytes(signal.to_ne_bytes());
+        signal
     }
     
     /// Set value of yr_ref
     #[inline(always)]
-    pub fn set_yr_ref(&mut self, value: f32) -> Result<(), CanError> {
+    pub fn set_yr_ref(&mut self, value: i32) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < -5_f32 || 5_f32 < value {
+        if value < -5_i32 || 5_i32 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 820 });
         }
-        let factor = 0.001_f32;
-        let offset = 0_f32;
-        let value = ((value - offset) / factor) as u32;
-        
+        let value = u32::from_ne_bytes(value.to_ne_bytes());
         self.raw.view_bits_mut::<Lsb0>()[0..32].store_le(value);
         Ok(())
     }
@@ -9486,7 +9495,7 @@ impl CsLog1 {
     /// - Unit: " Nm"
     /// - Receivers: Vector__XXX
     #[inline(always)]
-    pub fn yaw_moment(&self) -> f32 {
+    pub fn yaw_moment(&self) -> i32 {
         self.yaw_moment_raw()
     }
     
@@ -9494,30 +9503,26 @@ impl CsLog1 {
     ///
     /// - Start bit: 32
     /// - Signal size: 32 bits
-    /// - Factor: 0.001
+    /// - Factor: 1
     /// - Offset: 0
     /// - Byte order: LittleEndian
-    /// - Value type: Unsigned
+    /// - Value type: Signed
     #[inline(always)]
-    pub fn yaw_moment_raw(&self) -> f32 {
+    pub fn yaw_moment_raw(&self) -> i32 {
         let signal = self.raw.view_bits::<Lsb0>()[32..64].load_le::<u32>();
         
-        let factor = 0.001_f32;
-        let offset = 0_f32;
-        (signal as f32) * factor + offset
+        let signal  = i32::from_ne_bytes(signal.to_ne_bytes());
+        signal
     }
     
     /// Set value of yaw_moment
     #[inline(always)]
-    pub fn set_yaw_moment(&mut self, value: f32) -> Result<(), CanError> {
+    pub fn set_yaw_moment(&mut self, value: i32) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < -4000_f32 || 4000_f32 < value {
+        if value < -4000_i32 || 4000_i32 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 820 });
         }
-        let factor = 0.001_f32;
-        let offset = 0_f32;
-        let value = ((value - offset) / factor) as u32;
-        
+        let value = u32::from_ne_bytes(value.to_ne_bytes());
         self.raw.view_bits_mut::<Lsb0>()[32..64].store_le(value);
         Ok(())
     }
@@ -9553,8 +9558,8 @@ impl core::fmt::Debug for CsLog1 {
 #[cfg(feature = "arb")]
 impl<'a> Arbitrary<'a> for CsLog1 {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self, arbitrary::Error> {
-        let yr_ref = u.float_in_range(-5_f32..=5_f32)?;
-        let yaw_moment = u.float_in_range(-4000_f32..=4000_f32)?;
+        let yr_ref = u.int_in_range(-5..=5)?;
+        let yaw_moment = u.int_in_range(-4000..=4000)?;
         CsLog1::new(yr_ref,yaw_moment).map_err(|_| arbitrary::Error::IncorrectFormat)
     }
 }
@@ -9572,17 +9577,17 @@ pub struct CsLog2 {
 impl CsLog2 {
     pub const MESSAGE_ID: u32 = 821;
     
-    pub const DELTA_TORQUE_FL_MIN: u16 = 0_u16;
-    pub const DELTA_TORQUE_FL_MAX: u16 = 0_u16;
-    pub const DELTA_TORQUE_FR_MIN: u16 = 0_u16;
-    pub const DELTA_TORQUE_FR_MAX: u16 = 0_u16;
-    pub const DELTA_TORQUE_RL_MIN: u16 = 0_u16;
-    pub const DELTA_TORQUE_RL_MAX: u16 = 0_u16;
-    pub const DELTA_TORQUE_RR_MIN: u16 = 0_u16;
-    pub const DELTA_TORQUE_RR_MAX: u16 = 0_u16;
+    pub const DELTA_TORQUE_FL_MIN: i16 = 0_i16;
+    pub const DELTA_TORQUE_FL_MAX: i16 = 0_i16;
+    pub const DELTA_TORQUE_FR_MIN: i16 = 0_i16;
+    pub const DELTA_TORQUE_FR_MAX: i16 = 0_i16;
+    pub const DELTA_TORQUE_RL_MIN: i16 = 0_i16;
+    pub const DELTA_TORQUE_RL_MAX: i16 = 0_i16;
+    pub const DELTA_TORQUE_RR_MIN: i16 = 0_i16;
+    pub const DELTA_TORQUE_RR_MAX: i16 = 0_i16;
     
     /// Construct new CsLog_2 from values
-    pub fn new(delta_torque_fl: u16, delta_torque_fr: u16, delta_torque_rl: u16, delta_torque_rr: u16) -> Result<Self, CanError> {
+    pub fn new(delta_torque_fl: i16, delta_torque_fr: i16, delta_torque_rl: i16, delta_torque_rr: i16) -> Result<Self, CanError> {
         let mut res = Self { raw: [0u8; 8] };
         res.set_delta_torque_fl(delta_torque_fl)?;
         res.set_delta_torque_fr(delta_torque_fr)?;
@@ -9603,7 +9608,7 @@ impl CsLog2 {
     /// - Unit: " Nmm"
     /// - Receivers: Vector__XXX
     #[inline(always)]
-    pub fn delta_torque_fl(&self) -> u16 {
+    pub fn delta_torque_fl(&self) -> i16 {
         self.delta_torque_fl_raw()
     }
     
@@ -9614,21 +9619,23 @@ impl CsLog2 {
     /// - Factor: 1
     /// - Offset: 0
     /// - Byte order: LittleEndian
-    /// - Value type: Unsigned
+    /// - Value type: Signed
     #[inline(always)]
-    pub fn delta_torque_fl_raw(&self) -> u16 {
+    pub fn delta_torque_fl_raw(&self) -> i16 {
         let signal = self.raw.view_bits::<Lsb0>()[0..16].load_le::<u16>();
         
+        let signal  = i16::from_ne_bytes(signal.to_ne_bytes());
         signal
     }
     
     /// Set value of delta_torque_fl
     #[inline(always)]
-    pub fn set_delta_torque_fl(&mut self, value: u16) -> Result<(), CanError> {
+    pub fn set_delta_torque_fl(&mut self, value: i16) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < 0_u16 || 0_u16 < value {
+        if value < 0_i16 || 0_i16 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 821 });
         }
+        let value = u16::from_ne_bytes(value.to_ne_bytes());
         self.raw.view_bits_mut::<Lsb0>()[0..16].store_le(value);
         Ok(())
     }
@@ -9640,7 +9647,7 @@ impl CsLog2 {
     /// - Unit: " Nmm"
     /// - Receivers: Vector__XXX
     #[inline(always)]
-    pub fn delta_torque_fr(&self) -> u16 {
+    pub fn delta_torque_fr(&self) -> i16 {
         self.delta_torque_fr_raw()
     }
     
@@ -9651,21 +9658,23 @@ impl CsLog2 {
     /// - Factor: 1
     /// - Offset: 0
     /// - Byte order: LittleEndian
-    /// - Value type: Unsigned
+    /// - Value type: Signed
     #[inline(always)]
-    pub fn delta_torque_fr_raw(&self) -> u16 {
+    pub fn delta_torque_fr_raw(&self) -> i16 {
         let signal = self.raw.view_bits::<Lsb0>()[16..32].load_le::<u16>();
         
+        let signal  = i16::from_ne_bytes(signal.to_ne_bytes());
         signal
     }
     
     /// Set value of delta_torque_fr
     #[inline(always)]
-    pub fn set_delta_torque_fr(&mut self, value: u16) -> Result<(), CanError> {
+    pub fn set_delta_torque_fr(&mut self, value: i16) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < 0_u16 || 0_u16 < value {
+        if value < 0_i16 || 0_i16 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 821 });
         }
+        let value = u16::from_ne_bytes(value.to_ne_bytes());
         self.raw.view_bits_mut::<Lsb0>()[16..32].store_le(value);
         Ok(())
     }
@@ -9677,7 +9686,7 @@ impl CsLog2 {
     /// - Unit: " Nmm"
     /// - Receivers: Vector__XXX
     #[inline(always)]
-    pub fn delta_torque_rl(&self) -> u16 {
+    pub fn delta_torque_rl(&self) -> i16 {
         self.delta_torque_rl_raw()
     }
     
@@ -9688,21 +9697,23 @@ impl CsLog2 {
     /// - Factor: 1
     /// - Offset: 0
     /// - Byte order: LittleEndian
-    /// - Value type: Unsigned
+    /// - Value type: Signed
     #[inline(always)]
-    pub fn delta_torque_rl_raw(&self) -> u16 {
+    pub fn delta_torque_rl_raw(&self) -> i16 {
         let signal = self.raw.view_bits::<Lsb0>()[32..48].load_le::<u16>();
         
+        let signal  = i16::from_ne_bytes(signal.to_ne_bytes());
         signal
     }
     
     /// Set value of delta_torque_rl
     #[inline(always)]
-    pub fn set_delta_torque_rl(&mut self, value: u16) -> Result<(), CanError> {
+    pub fn set_delta_torque_rl(&mut self, value: i16) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < 0_u16 || 0_u16 < value {
+        if value < 0_i16 || 0_i16 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 821 });
         }
+        let value = u16::from_ne_bytes(value.to_ne_bytes());
         self.raw.view_bits_mut::<Lsb0>()[32..48].store_le(value);
         Ok(())
     }
@@ -9714,7 +9725,7 @@ impl CsLog2 {
     /// - Unit: " Nmm"
     /// - Receivers: Vector__XXX
     #[inline(always)]
-    pub fn delta_torque_rr(&self) -> u16 {
+    pub fn delta_torque_rr(&self) -> i16 {
         self.delta_torque_rr_raw()
     }
     
@@ -9725,21 +9736,23 @@ impl CsLog2 {
     /// - Factor: 1
     /// - Offset: 0
     /// - Byte order: LittleEndian
-    /// - Value type: Unsigned
+    /// - Value type: Signed
     #[inline(always)]
-    pub fn delta_torque_rr_raw(&self) -> u16 {
+    pub fn delta_torque_rr_raw(&self) -> i16 {
         let signal = self.raw.view_bits::<Lsb0>()[48..64].load_le::<u16>();
         
+        let signal  = i16::from_ne_bytes(signal.to_ne_bytes());
         signal
     }
     
     /// Set value of delta_torque_rr
     #[inline(always)]
-    pub fn set_delta_torque_rr(&mut self, value: u16) -> Result<(), CanError> {
+    pub fn set_delta_torque_rr(&mut self, value: i16) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < 0_u16 || 0_u16 < value {
+        if value < 0_i16 || 0_i16 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 821 });
         }
+        let value = u16::from_ne_bytes(value.to_ne_bytes());
         self.raw.view_bits_mut::<Lsb0>()[48..64].store_le(value);
         Ok(())
     }
@@ -9999,17 +10012,17 @@ pub struct BmsLvCell1 {
 impl BmsLvCell1 {
     pub const MESSAGE_ID: u32 = 870;
     
-    pub const CELL_0_MIN: u16 = 0_u16;
-    pub const CELL_0_MAX: u16 = 0_u16;
-    pub const CELL_1_MIN: u16 = 0_u16;
-    pub const CELL_1_MAX: u16 = 0_u16;
-    pub const CELL_2_MIN: u16 = 0_u16;
-    pub const CELL_2_MAX: u16 = 0_u16;
-    pub const CELL_3_MIN: u16 = 0_u16;
-    pub const CELL_3_MAX: u16 = 0_u16;
+    pub const CELL_0_MIN: f32 = 0_f32;
+    pub const CELL_0_MAX: f32 = 0_f32;
+    pub const CELL_1_MIN: f32 = 0_f32;
+    pub const CELL_1_MAX: f32 = 0_f32;
+    pub const CELL_2_MIN: f32 = 0_f32;
+    pub const CELL_2_MAX: f32 = 0_f32;
+    pub const CELL_3_MIN: f32 = 0_f32;
+    pub const CELL_3_MAX: f32 = 0_f32;
     
     /// Construct new BmsLvCell_1 from values
-    pub fn new(cell_0: u16, cell_1: u16, cell_2: u16, cell_3: u16) -> Result<Self, CanError> {
+    pub fn new(cell_0: f32, cell_1: f32, cell_2: f32, cell_3: f32) -> Result<Self, CanError> {
         let mut res = Self { raw: [0u8; 8] };
         res.set_cell_0(cell_0)?;
         res.set_cell_1(cell_1)?;
@@ -10027,10 +10040,10 @@ impl BmsLvCell1 {
     ///
     /// - Min: 0
     /// - Max: 0
-    /// - Unit: "V"
+    /// - Unit: "mV"
     /// - Receivers: BMSLV
     #[inline(always)]
-    pub fn cell_0(&self) -> u16 {
+    pub fn cell_0(&self) -> f32 {
         self.cell_0_raw()
     }
     
@@ -10038,24 +10051,30 @@ impl BmsLvCell1 {
     ///
     /// - Start bit: 0
     /// - Signal size: 16 bits
-    /// - Factor: 1
+    /// - Factor: 0.1
     /// - Offset: 0
     /// - Byte order: LittleEndian
     /// - Value type: Unsigned
     #[inline(always)]
-    pub fn cell_0_raw(&self) -> u16 {
+    pub fn cell_0_raw(&self) -> f32 {
         let signal = self.raw.view_bits::<Lsb0>()[0..16].load_le::<u16>();
         
-        signal
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        (signal as f32) * factor + offset
     }
     
     /// Set value of cell_0
     #[inline(always)]
-    pub fn set_cell_0(&mut self, value: u16) -> Result<(), CanError> {
+    pub fn set_cell_0(&mut self, value: f32) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < 0_u16 || 0_u16 < value {
+        if value < 0_f32 || 0_f32 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 870 });
         }
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        let value = ((value - offset) / factor) as u16;
+        
         self.raw.view_bits_mut::<Lsb0>()[0..16].store_le(value);
         Ok(())
     }
@@ -10064,10 +10083,10 @@ impl BmsLvCell1 {
     ///
     /// - Min: 0
     /// - Max: 0
-    /// - Unit: "V"
+    /// - Unit: "mV"
     /// - Receivers: BMSLV
     #[inline(always)]
-    pub fn cell_1(&self) -> u16 {
+    pub fn cell_1(&self) -> f32 {
         self.cell_1_raw()
     }
     
@@ -10075,24 +10094,30 @@ impl BmsLvCell1 {
     ///
     /// - Start bit: 16
     /// - Signal size: 16 bits
-    /// - Factor: 1
+    /// - Factor: 0.1
     /// - Offset: 0
     /// - Byte order: LittleEndian
     /// - Value type: Unsigned
     #[inline(always)]
-    pub fn cell_1_raw(&self) -> u16 {
+    pub fn cell_1_raw(&self) -> f32 {
         let signal = self.raw.view_bits::<Lsb0>()[16..32].load_le::<u16>();
         
-        signal
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        (signal as f32) * factor + offset
     }
     
     /// Set value of cell_1
     #[inline(always)]
-    pub fn set_cell_1(&mut self, value: u16) -> Result<(), CanError> {
+    pub fn set_cell_1(&mut self, value: f32) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < 0_u16 || 0_u16 < value {
+        if value < 0_f32 || 0_f32 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 870 });
         }
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        let value = ((value - offset) / factor) as u16;
+        
         self.raw.view_bits_mut::<Lsb0>()[16..32].store_le(value);
         Ok(())
     }
@@ -10101,10 +10126,10 @@ impl BmsLvCell1 {
     ///
     /// - Min: 0
     /// - Max: 0
-    /// - Unit: "V"
+    /// - Unit: "mV"
     /// - Receivers: BMSLV
     #[inline(always)]
-    pub fn cell_2(&self) -> u16 {
+    pub fn cell_2(&self) -> f32 {
         self.cell_2_raw()
     }
     
@@ -10112,24 +10137,30 @@ impl BmsLvCell1 {
     ///
     /// - Start bit: 32
     /// - Signal size: 16 bits
-    /// - Factor: 1
+    /// - Factor: 0.1
     /// - Offset: 0
     /// - Byte order: LittleEndian
     /// - Value type: Unsigned
     #[inline(always)]
-    pub fn cell_2_raw(&self) -> u16 {
+    pub fn cell_2_raw(&self) -> f32 {
         let signal = self.raw.view_bits::<Lsb0>()[32..48].load_le::<u16>();
         
-        signal
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        (signal as f32) * factor + offset
     }
     
     /// Set value of cell_2
     #[inline(always)]
-    pub fn set_cell_2(&mut self, value: u16) -> Result<(), CanError> {
+    pub fn set_cell_2(&mut self, value: f32) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < 0_u16 || 0_u16 < value {
+        if value < 0_f32 || 0_f32 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 870 });
         }
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        let value = ((value - offset) / factor) as u16;
+        
         self.raw.view_bits_mut::<Lsb0>()[32..48].store_le(value);
         Ok(())
     }
@@ -10138,10 +10169,10 @@ impl BmsLvCell1 {
     ///
     /// - Min: 0
     /// - Max: 0
-    /// - Unit: "V"
+    /// - Unit: "mV"
     /// - Receivers: BMSLV
     #[inline(always)]
-    pub fn cell_3(&self) -> u16 {
+    pub fn cell_3(&self) -> f32 {
         self.cell_3_raw()
     }
     
@@ -10149,24 +10180,30 @@ impl BmsLvCell1 {
     ///
     /// - Start bit: 48
     /// - Signal size: 16 bits
-    /// - Factor: 1
+    /// - Factor: 0.1
     /// - Offset: 0
     /// - Byte order: LittleEndian
     /// - Value type: Unsigned
     #[inline(always)]
-    pub fn cell_3_raw(&self) -> u16 {
+    pub fn cell_3_raw(&self) -> f32 {
         let signal = self.raw.view_bits::<Lsb0>()[48..64].load_le::<u16>();
         
-        signal
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        (signal as f32) * factor + offset
     }
     
     /// Set value of cell_3
     #[inline(always)]
-    pub fn set_cell_3(&mut self, value: u16) -> Result<(), CanError> {
+    pub fn set_cell_3(&mut self, value: f32) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < 0_u16 || 0_u16 < value {
+        if value < 0_f32 || 0_f32 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 870 });
         }
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        let value = ((value - offset) / factor) as u16;
+        
         self.raw.view_bits_mut::<Lsb0>()[48..64].store_le(value);
         Ok(())
     }
@@ -10204,10 +10241,10 @@ impl core::fmt::Debug for BmsLvCell1 {
 #[cfg(feature = "arb")]
 impl<'a> Arbitrary<'a> for BmsLvCell1 {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self, arbitrary::Error> {
-        let cell_0 = u.int_in_range(0..=0)?;
-        let cell_1 = u.int_in_range(0..=0)?;
-        let cell_2 = u.int_in_range(0..=0)?;
-        let cell_3 = u.int_in_range(0..=0)?;
+        let cell_0 = u.float_in_range(0_f32..=0_f32)?;
+        let cell_1 = u.float_in_range(0_f32..=0_f32)?;
+        let cell_2 = u.float_in_range(0_f32..=0_f32)?;
+        let cell_3 = u.float_in_range(0_f32..=0_f32)?;
         BmsLvCell1::new(cell_0,cell_1,cell_2,cell_3).map_err(|_| arbitrary::Error::IncorrectFormat)
     }
 }
@@ -10225,17 +10262,17 @@ pub struct BmsLvCell2 {
 impl BmsLvCell2 {
     pub const MESSAGE_ID: u32 = 871;
     
-    pub const CELL_4_MIN: u16 = 0_u16;
-    pub const CELL_4_MAX: u16 = 0_u16;
-    pub const CELL_5_MIN: u16 = 0_u16;
-    pub const CELL_5_MAX: u16 = 0_u16;
-    pub const CELL_6_MIN: u16 = 0_u16;
-    pub const CELL_6_MAX: u16 = 0_u16;
-    pub const CELL_7_MIN: u16 = 0_u16;
-    pub const CELL_7_MAX: u16 = 0_u16;
+    pub const CELL_4_MIN: f32 = 0_f32;
+    pub const CELL_4_MAX: f32 = 0_f32;
+    pub const CELL_5_MIN: f32 = 0_f32;
+    pub const CELL_5_MAX: f32 = 0_f32;
+    pub const CELL_6_MIN: f32 = 0_f32;
+    pub const CELL_6_MAX: f32 = 0_f32;
+    pub const CELL_7_MIN: f32 = 0_f32;
+    pub const CELL_7_MAX: f32 = 0_f32;
     
     /// Construct new BmsLvCell_2 from values
-    pub fn new(cell_4: u16, cell_5: u16, cell_6: u16, cell_7: u16) -> Result<Self, CanError> {
+    pub fn new(cell_4: f32, cell_5: f32, cell_6: f32, cell_7: f32) -> Result<Self, CanError> {
         let mut res = Self { raw: [0u8; 8] };
         res.set_cell_4(cell_4)?;
         res.set_cell_5(cell_5)?;
@@ -10253,10 +10290,10 @@ impl BmsLvCell2 {
     ///
     /// - Min: 0
     /// - Max: 0
-    /// - Unit: "V"
+    /// - Unit: "mV"
     /// - Receivers: BMSLV
     #[inline(always)]
-    pub fn cell_4(&self) -> u16 {
+    pub fn cell_4(&self) -> f32 {
         self.cell_4_raw()
     }
     
@@ -10264,24 +10301,30 @@ impl BmsLvCell2 {
     ///
     /// - Start bit: 0
     /// - Signal size: 16 bits
-    /// - Factor: 1
+    /// - Factor: 0.1
     /// - Offset: 0
     /// - Byte order: LittleEndian
     /// - Value type: Unsigned
     #[inline(always)]
-    pub fn cell_4_raw(&self) -> u16 {
+    pub fn cell_4_raw(&self) -> f32 {
         let signal = self.raw.view_bits::<Lsb0>()[0..16].load_le::<u16>();
         
-        signal
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        (signal as f32) * factor + offset
     }
     
     /// Set value of cell_4
     #[inline(always)]
-    pub fn set_cell_4(&mut self, value: u16) -> Result<(), CanError> {
+    pub fn set_cell_4(&mut self, value: f32) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < 0_u16 || 0_u16 < value {
+        if value < 0_f32 || 0_f32 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 871 });
         }
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        let value = ((value - offset) / factor) as u16;
+        
         self.raw.view_bits_mut::<Lsb0>()[0..16].store_le(value);
         Ok(())
     }
@@ -10290,10 +10333,10 @@ impl BmsLvCell2 {
     ///
     /// - Min: 0
     /// - Max: 0
-    /// - Unit: "V"
+    /// - Unit: "mV"
     /// - Receivers: BMSLV
     #[inline(always)]
-    pub fn cell_5(&self) -> u16 {
+    pub fn cell_5(&self) -> f32 {
         self.cell_5_raw()
     }
     
@@ -10301,24 +10344,30 @@ impl BmsLvCell2 {
     ///
     /// - Start bit: 16
     /// - Signal size: 16 bits
-    /// - Factor: 1
+    /// - Factor: 0.1
     /// - Offset: 0
     /// - Byte order: LittleEndian
     /// - Value type: Unsigned
     #[inline(always)]
-    pub fn cell_5_raw(&self) -> u16 {
+    pub fn cell_5_raw(&self) -> f32 {
         let signal = self.raw.view_bits::<Lsb0>()[16..32].load_le::<u16>();
         
-        signal
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        (signal as f32) * factor + offset
     }
     
     /// Set value of cell_5
     #[inline(always)]
-    pub fn set_cell_5(&mut self, value: u16) -> Result<(), CanError> {
+    pub fn set_cell_5(&mut self, value: f32) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < 0_u16 || 0_u16 < value {
+        if value < 0_f32 || 0_f32 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 871 });
         }
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        let value = ((value - offset) / factor) as u16;
+        
         self.raw.view_bits_mut::<Lsb0>()[16..32].store_le(value);
         Ok(())
     }
@@ -10327,10 +10376,10 @@ impl BmsLvCell2 {
     ///
     /// - Min: 0
     /// - Max: 0
-    /// - Unit: "V"
+    /// - Unit: "mV"
     /// - Receivers: BMSLV
     #[inline(always)]
-    pub fn cell_6(&self) -> u16 {
+    pub fn cell_6(&self) -> f32 {
         self.cell_6_raw()
     }
     
@@ -10338,24 +10387,30 @@ impl BmsLvCell2 {
     ///
     /// - Start bit: 32
     /// - Signal size: 16 bits
-    /// - Factor: 1
+    /// - Factor: 0.1
     /// - Offset: 0
     /// - Byte order: LittleEndian
     /// - Value type: Unsigned
     #[inline(always)]
-    pub fn cell_6_raw(&self) -> u16 {
+    pub fn cell_6_raw(&self) -> f32 {
         let signal = self.raw.view_bits::<Lsb0>()[32..48].load_le::<u16>();
         
-        signal
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        (signal as f32) * factor + offset
     }
     
     /// Set value of cell_6
     #[inline(always)]
-    pub fn set_cell_6(&mut self, value: u16) -> Result<(), CanError> {
+    pub fn set_cell_6(&mut self, value: f32) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < 0_u16 || 0_u16 < value {
+        if value < 0_f32 || 0_f32 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 871 });
         }
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        let value = ((value - offset) / factor) as u16;
+        
         self.raw.view_bits_mut::<Lsb0>()[32..48].store_le(value);
         Ok(())
     }
@@ -10364,10 +10419,10 @@ impl BmsLvCell2 {
     ///
     /// - Min: 0
     /// - Max: 0
-    /// - Unit: "V"
+    /// - Unit: "mV"
     /// - Receivers: BMSLV
     #[inline(always)]
-    pub fn cell_7(&self) -> u16 {
+    pub fn cell_7(&self) -> f32 {
         self.cell_7_raw()
     }
     
@@ -10375,24 +10430,30 @@ impl BmsLvCell2 {
     ///
     /// - Start bit: 48
     /// - Signal size: 16 bits
-    /// - Factor: 1
+    /// - Factor: 0.1
     /// - Offset: 0
     /// - Byte order: LittleEndian
     /// - Value type: Unsigned
     #[inline(always)]
-    pub fn cell_7_raw(&self) -> u16 {
+    pub fn cell_7_raw(&self) -> f32 {
         let signal = self.raw.view_bits::<Lsb0>()[48..64].load_le::<u16>();
         
-        signal
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        (signal as f32) * factor + offset
     }
     
     /// Set value of cell_7
     #[inline(always)]
-    pub fn set_cell_7(&mut self, value: u16) -> Result<(), CanError> {
+    pub fn set_cell_7(&mut self, value: f32) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < 0_u16 || 0_u16 < value {
+        if value < 0_f32 || 0_f32 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 871 });
         }
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        let value = ((value - offset) / factor) as u16;
+        
         self.raw.view_bits_mut::<Lsb0>()[48..64].store_le(value);
         Ok(())
     }
@@ -10430,10 +10491,10 @@ impl core::fmt::Debug for BmsLvCell2 {
 #[cfg(feature = "arb")]
 impl<'a> Arbitrary<'a> for BmsLvCell2 {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self, arbitrary::Error> {
-        let cell_4 = u.int_in_range(0..=0)?;
-        let cell_5 = u.int_in_range(0..=0)?;
-        let cell_6 = u.int_in_range(0..=0)?;
-        let cell_7 = u.int_in_range(0..=0)?;
+        let cell_4 = u.float_in_range(0_f32..=0_f32)?;
+        let cell_5 = u.float_in_range(0_f32..=0_f32)?;
+        let cell_6 = u.float_in_range(0_f32..=0_f32)?;
+        let cell_7 = u.float_in_range(0_f32..=0_f32)?;
         BmsLvCell2::new(cell_4,cell_5,cell_6,cell_7).map_err(|_| arbitrary::Error::IncorrectFormat)
     }
 }
@@ -10451,17 +10512,17 @@ pub struct BmsLvCell3 {
 impl BmsLvCell3 {
     pub const MESSAGE_ID: u32 = 872;
     
-    pub const CELL_8_MIN: u16 = 0_u16;
-    pub const CELL_8_MAX: u16 = 0_u16;
-    pub const CELL_9_MIN: u16 = 0_u16;
-    pub const CELL_9_MAX: u16 = 0_u16;
-    pub const CELL_10_MIN: u16 = 0_u16;
-    pub const CELL_10_MAX: u16 = 0_u16;
-    pub const CELL_12_MIN: u16 = 0_u16;
-    pub const CELL_12_MAX: u16 = 0_u16;
+    pub const CELL_8_MIN: f32 = 0_f32;
+    pub const CELL_8_MAX: f32 = 0_f32;
+    pub const CELL_9_MIN: f32 = 0_f32;
+    pub const CELL_9_MAX: f32 = 0_f32;
+    pub const CELL_10_MIN: f32 = 0_f32;
+    pub const CELL_10_MAX: f32 = 0_f32;
+    pub const CELL_12_MIN: f32 = 0_f32;
+    pub const CELL_12_MAX: f32 = 0_f32;
     
     /// Construct new BmsLvCell_3 from values
-    pub fn new(cell_8: u16, cell_9: u16, cell_10: u16, cell_12: u16) -> Result<Self, CanError> {
+    pub fn new(cell_8: f32, cell_9: f32, cell_10: f32, cell_12: f32) -> Result<Self, CanError> {
         let mut res = Self { raw: [0u8; 8] };
         res.set_cell_8(cell_8)?;
         res.set_cell_9(cell_9)?;
@@ -10479,10 +10540,10 @@ impl BmsLvCell3 {
     ///
     /// - Min: 0
     /// - Max: 0
-    /// - Unit: "V"
+    /// - Unit: "mV"
     /// - Receivers: BMSLV
     #[inline(always)]
-    pub fn cell_8(&self) -> u16 {
+    pub fn cell_8(&self) -> f32 {
         self.cell_8_raw()
     }
     
@@ -10490,24 +10551,30 @@ impl BmsLvCell3 {
     ///
     /// - Start bit: 0
     /// - Signal size: 16 bits
-    /// - Factor: 1
+    /// - Factor: 0.1
     /// - Offset: 0
     /// - Byte order: LittleEndian
     /// - Value type: Unsigned
     #[inline(always)]
-    pub fn cell_8_raw(&self) -> u16 {
+    pub fn cell_8_raw(&self) -> f32 {
         let signal = self.raw.view_bits::<Lsb0>()[0..16].load_le::<u16>();
         
-        signal
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        (signal as f32) * factor + offset
     }
     
     /// Set value of cell_8
     #[inline(always)]
-    pub fn set_cell_8(&mut self, value: u16) -> Result<(), CanError> {
+    pub fn set_cell_8(&mut self, value: f32) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < 0_u16 || 0_u16 < value {
+        if value < 0_f32 || 0_f32 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 872 });
         }
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        let value = ((value - offset) / factor) as u16;
+        
         self.raw.view_bits_mut::<Lsb0>()[0..16].store_le(value);
         Ok(())
     }
@@ -10516,10 +10583,10 @@ impl BmsLvCell3 {
     ///
     /// - Min: 0
     /// - Max: 0
-    /// - Unit: "V"
+    /// - Unit: "mV"
     /// - Receivers: BMSLV
     #[inline(always)]
-    pub fn cell_9(&self) -> u16 {
+    pub fn cell_9(&self) -> f32 {
         self.cell_9_raw()
     }
     
@@ -10527,24 +10594,30 @@ impl BmsLvCell3 {
     ///
     /// - Start bit: 16
     /// - Signal size: 16 bits
-    /// - Factor: 1
+    /// - Factor: 0.1
     /// - Offset: 0
     /// - Byte order: LittleEndian
     /// - Value type: Unsigned
     #[inline(always)]
-    pub fn cell_9_raw(&self) -> u16 {
+    pub fn cell_9_raw(&self) -> f32 {
         let signal = self.raw.view_bits::<Lsb0>()[16..32].load_le::<u16>();
         
-        signal
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        (signal as f32) * factor + offset
     }
     
     /// Set value of cell_9
     #[inline(always)]
-    pub fn set_cell_9(&mut self, value: u16) -> Result<(), CanError> {
+    pub fn set_cell_9(&mut self, value: f32) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < 0_u16 || 0_u16 < value {
+        if value < 0_f32 || 0_f32 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 872 });
         }
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        let value = ((value - offset) / factor) as u16;
+        
         self.raw.view_bits_mut::<Lsb0>()[16..32].store_le(value);
         Ok(())
     }
@@ -10553,10 +10626,10 @@ impl BmsLvCell3 {
     ///
     /// - Min: 0
     /// - Max: 0
-    /// - Unit: "V"
+    /// - Unit: "mV"
     /// - Receivers: BMSLV
     #[inline(always)]
-    pub fn cell_10(&self) -> u16 {
+    pub fn cell_10(&self) -> f32 {
         self.cell_10_raw()
     }
     
@@ -10564,24 +10637,30 @@ impl BmsLvCell3 {
     ///
     /// - Start bit: 32
     /// - Signal size: 16 bits
-    /// - Factor: 1
+    /// - Factor: 0.1
     /// - Offset: 0
     /// - Byte order: LittleEndian
     /// - Value type: Unsigned
     #[inline(always)]
-    pub fn cell_10_raw(&self) -> u16 {
+    pub fn cell_10_raw(&self) -> f32 {
         let signal = self.raw.view_bits::<Lsb0>()[32..48].load_le::<u16>();
         
-        signal
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        (signal as f32) * factor + offset
     }
     
     /// Set value of cell_10
     #[inline(always)]
-    pub fn set_cell_10(&mut self, value: u16) -> Result<(), CanError> {
+    pub fn set_cell_10(&mut self, value: f32) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < 0_u16 || 0_u16 < value {
+        if value < 0_f32 || 0_f32 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 872 });
         }
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        let value = ((value - offset) / factor) as u16;
+        
         self.raw.view_bits_mut::<Lsb0>()[32..48].store_le(value);
         Ok(())
     }
@@ -10590,10 +10669,10 @@ impl BmsLvCell3 {
     ///
     /// - Min: 0
     /// - Max: 0
-    /// - Unit: "V"
+    /// - Unit: "mV"
     /// - Receivers: BMSLV
     #[inline(always)]
-    pub fn cell_12(&self) -> u16 {
+    pub fn cell_12(&self) -> f32 {
         self.cell_12_raw()
     }
     
@@ -10601,24 +10680,30 @@ impl BmsLvCell3 {
     ///
     /// - Start bit: 48
     /// - Signal size: 16 bits
-    /// - Factor: 1
+    /// - Factor: 0.1
     /// - Offset: 0
     /// - Byte order: LittleEndian
     /// - Value type: Unsigned
     #[inline(always)]
-    pub fn cell_12_raw(&self) -> u16 {
+    pub fn cell_12_raw(&self) -> f32 {
         let signal = self.raw.view_bits::<Lsb0>()[48..64].load_le::<u16>();
         
-        signal
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        (signal as f32) * factor + offset
     }
     
     /// Set value of cell_12
     #[inline(always)]
-    pub fn set_cell_12(&mut self, value: u16) -> Result<(), CanError> {
+    pub fn set_cell_12(&mut self, value: f32) -> Result<(), CanError> {
         #[cfg(feature = "range_checked")]
-        if value < 0_u16 || 0_u16 < value {
+        if value < 0_f32 || 0_f32 < value {
             return Err(CanError::ParameterOutOfRange { message_id: 872 });
         }
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        let value = ((value - offset) / factor) as u16;
+        
         self.raw.view_bits_mut::<Lsb0>()[48..64].store_le(value);
         Ok(())
     }
@@ -10656,11 +10741,261 @@ impl core::fmt::Debug for BmsLvCell3 {
 #[cfg(feature = "arb")]
 impl<'a> Arbitrary<'a> for BmsLvCell3 {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self, arbitrary::Error> {
-        let cell_8 = u.int_in_range(0..=0)?;
-        let cell_9 = u.int_in_range(0..=0)?;
-        let cell_10 = u.int_in_range(0..=0)?;
-        let cell_12 = u.int_in_range(0..=0)?;
+        let cell_8 = u.float_in_range(0_f32..=0_f32)?;
+        let cell_9 = u.float_in_range(0_f32..=0_f32)?;
+        let cell_10 = u.float_in_range(0_f32..=0_f32)?;
+        let cell_12 = u.float_in_range(0_f32..=0_f32)?;
         BmsLvCell3::new(cell_8,cell_9,cell_10,cell_12).map_err(|_| arbitrary::Error::IncorrectFormat)
+    }
+}
+
+/// BmsLvTemps
+///
+/// - ID: 873 (0x369)
+/// - Size: 8 bytes
+/// - Transmitter: BMSLV
+#[derive(Clone, Copy)]
+pub struct BmsLvTemps {
+    raw: [u8; 8],
+}
+
+impl BmsLvTemps {
+    pub const MESSAGE_ID: u32 = 873;
+    
+    pub const TEMP_0_MIN: f32 = 0_f32;
+    pub const TEMP_0_MAX: f32 = 0_f32;
+    pub const TEMP_1_MIN: f32 = 0_f32;
+    pub const TEMP_1_MAX: f32 = 0_f32;
+    pub const TEMP_2_MIN: f32 = 0_f32;
+    pub const TEMP_2_MAX: f32 = 0_f32;
+    pub const TEMP_3_MIN: f32 = 0_f32;
+    pub const TEMP_3_MAX: f32 = 0_f32;
+    
+    /// Construct new BmsLvTemps from values
+    pub fn new(temp_0: f32, temp_1: f32, temp_2: f32, temp_3: f32) -> Result<Self, CanError> {
+        let mut res = Self { raw: [0u8; 8] };
+        res.set_temp_0(temp_0)?;
+        res.set_temp_1(temp_1)?;
+        res.set_temp_2(temp_2)?;
+        res.set_temp_3(temp_3)?;
+        Ok(res)
+    }
+    
+    /// Access message payload raw value
+    pub fn raw(&self) -> &[u8; 8] {
+        &self.raw
+    }
+    
+    /// temp_0
+    ///
+    /// - Min: 0
+    /// - Max: 0
+    /// - Unit: "C"
+    /// - Receivers: BMSLV
+    #[inline(always)]
+    pub fn temp_0(&self) -> f32 {
+        self.temp_0_raw()
+    }
+    
+    /// Get raw value of temp_0
+    ///
+    /// - Start bit: 0
+    /// - Signal size: 16 bits
+    /// - Factor: 0.1
+    /// - Offset: 0
+    /// - Byte order: LittleEndian
+    /// - Value type: Unsigned
+    #[inline(always)]
+    pub fn temp_0_raw(&self) -> f32 {
+        let signal = self.raw.view_bits::<Lsb0>()[0..16].load_le::<u16>();
+        
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        (signal as f32) * factor + offset
+    }
+    
+    /// Set value of temp_0
+    #[inline(always)]
+    pub fn set_temp_0(&mut self, value: f32) -> Result<(), CanError> {
+        #[cfg(feature = "range_checked")]
+        if value < 0_f32 || 0_f32 < value {
+            return Err(CanError::ParameterOutOfRange { message_id: 873 });
+        }
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        let value = ((value - offset) / factor) as u16;
+        
+        self.raw.view_bits_mut::<Lsb0>()[0..16].store_le(value);
+        Ok(())
+    }
+    
+    /// temp_1
+    ///
+    /// - Min: 0
+    /// - Max: 0
+    /// - Unit: "C"
+    /// - Receivers: BMSLV
+    #[inline(always)]
+    pub fn temp_1(&self) -> f32 {
+        self.temp_1_raw()
+    }
+    
+    /// Get raw value of temp_1
+    ///
+    /// - Start bit: 16
+    /// - Signal size: 16 bits
+    /// - Factor: 0.1
+    /// - Offset: 0
+    /// - Byte order: LittleEndian
+    /// - Value type: Unsigned
+    #[inline(always)]
+    pub fn temp_1_raw(&self) -> f32 {
+        let signal = self.raw.view_bits::<Lsb0>()[16..32].load_le::<u16>();
+        
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        (signal as f32) * factor + offset
+    }
+    
+    /// Set value of temp_1
+    #[inline(always)]
+    pub fn set_temp_1(&mut self, value: f32) -> Result<(), CanError> {
+        #[cfg(feature = "range_checked")]
+        if value < 0_f32 || 0_f32 < value {
+            return Err(CanError::ParameterOutOfRange { message_id: 873 });
+        }
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        let value = ((value - offset) / factor) as u16;
+        
+        self.raw.view_bits_mut::<Lsb0>()[16..32].store_le(value);
+        Ok(())
+    }
+    
+    /// temp_2
+    ///
+    /// - Min: 0
+    /// - Max: 0
+    /// - Unit: "C"
+    /// - Receivers: BMSLV
+    #[inline(always)]
+    pub fn temp_2(&self) -> f32 {
+        self.temp_2_raw()
+    }
+    
+    /// Get raw value of temp_2
+    ///
+    /// - Start bit: 32
+    /// - Signal size: 16 bits
+    /// - Factor: 0.1
+    /// - Offset: 0
+    /// - Byte order: LittleEndian
+    /// - Value type: Unsigned
+    #[inline(always)]
+    pub fn temp_2_raw(&self) -> f32 {
+        let signal = self.raw.view_bits::<Lsb0>()[32..48].load_le::<u16>();
+        
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        (signal as f32) * factor + offset
+    }
+    
+    /// Set value of temp_2
+    #[inline(always)]
+    pub fn set_temp_2(&mut self, value: f32) -> Result<(), CanError> {
+        #[cfg(feature = "range_checked")]
+        if value < 0_f32 || 0_f32 < value {
+            return Err(CanError::ParameterOutOfRange { message_id: 873 });
+        }
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        let value = ((value - offset) / factor) as u16;
+        
+        self.raw.view_bits_mut::<Lsb0>()[32..48].store_le(value);
+        Ok(())
+    }
+    
+    /// temp_3
+    ///
+    /// - Min: 0
+    /// - Max: 0
+    /// - Unit: "C"
+    /// - Receivers: BMSLV
+    #[inline(always)]
+    pub fn temp_3(&self) -> f32 {
+        self.temp_3_raw()
+    }
+    
+    /// Get raw value of temp_3
+    ///
+    /// - Start bit: 48
+    /// - Signal size: 16 bits
+    /// - Factor: 0.1
+    /// - Offset: 0
+    /// - Byte order: LittleEndian
+    /// - Value type: Unsigned
+    #[inline(always)]
+    pub fn temp_3_raw(&self) -> f32 {
+        let signal = self.raw.view_bits::<Lsb0>()[48..64].load_le::<u16>();
+        
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        (signal as f32) * factor + offset
+    }
+    
+    /// Set value of temp_3
+    #[inline(always)]
+    pub fn set_temp_3(&mut self, value: f32) -> Result<(), CanError> {
+        #[cfg(feature = "range_checked")]
+        if value < 0_f32 || 0_f32 < value {
+            return Err(CanError::ParameterOutOfRange { message_id: 873 });
+        }
+        let factor = 0.1_f32;
+        let offset = 0_f32;
+        let value = ((value - offset) / factor) as u16;
+        
+        self.raw.view_bits_mut::<Lsb0>()[48..64].store_le(value);
+        Ok(())
+    }
+    
+}
+
+impl core::convert::TryFrom<&[u8]> for BmsLvTemps {
+    type Error = CanError;
+    
+    #[inline(always)]
+    fn try_from(payload: &[u8]) -> Result<Self, Self::Error> {
+        if payload.len() != 8 { return Err(CanError::InvalidPayloadSize); }
+        let mut raw = [0u8; 8];
+        raw.copy_from_slice(&payload[..8]);
+        Ok(Self { raw })
+    }
+}
+
+#[cfg(feature = "debug")]
+impl core::fmt::Debug for BmsLvTemps {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        if f.alternate() {
+            f.debug_struct("BmsLvTemps")
+                .field("temp_0", &self.temp_0())
+                .field("temp_1", &self.temp_1())
+                .field("temp_2", &self.temp_2())
+                .field("temp_3", &self.temp_3())
+            .finish()
+        } else {
+            f.debug_tuple("BmsLvTemps").field(&self.raw).finish()
+        }
+    }
+}
+
+#[cfg(feature = "arb")]
+impl<'a> Arbitrary<'a> for BmsLvTemps {
+    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self, arbitrary::Error> {
+        let temp_0 = u.float_in_range(0_f32..=0_f32)?;
+        let temp_1 = u.float_in_range(0_f32..=0_f32)?;
+        let temp_2 = u.float_in_range(0_f32..=0_f32)?;
+        let temp_3 = u.float_in_range(0_f32..=0_f32)?;
+        BmsLvTemps::new(temp_0,temp_1,temp_2,temp_3).map_err(|_| arbitrary::Error::IncorrectFormat)
     }
 }
 

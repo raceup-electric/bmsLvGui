@@ -258,8 +258,8 @@ impl<const N:usize> BmsLvGui<N> {
 
     pub fn update(&mut self){
 
-        fn get_mv(raw: u16) -> f32{
-            f32::from(raw)/10.0
+        fn get_mv(raw: f32) -> f32{
+            raw/10.0
         }
 
         let cell_enable = BmsLvCellControl::new(true).ok().unwrap();
