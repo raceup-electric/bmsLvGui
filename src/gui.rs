@@ -13,10 +13,16 @@ use super::messages::*;
 
 type Volt = f32;
 type Amper= f32;
+type Temp = f32;
 
 struct BmsCell{
     volt: Volt,
     rx: Receiver<Volt>
+}
+
+struct BmsTemp{
+    temp: Temp,
+    rx: Receiver<Temp>
 }
 
 static RUN: atomic::AtomicBool = atomic::AtomicBool::new(true);
@@ -24,6 +30,7 @@ static RUN: atomic::AtomicBool = atomic::AtomicBool::new(true);
 #[allow(unused)]
 pub struct BmsLvGui<const N : usize>{
     tx_channels: [Sender<Volt>;N],
+    tx_channel_2: [Sender<Temp>;N],
     min_volt_tx: Sender<Volt>,
     max_volt_tx: Sender<Volt>,
     avg_volt_tx: Sender<Volt>,
@@ -52,6 +59,11 @@ impl<const N:usize> BmsLvGui<N> {
             (tx,rx)
         });
 
+        let channel_2: [_;N] = std::array::from_fn(|_| {
+            let (tx, rx) = channel::<Temp>(0.0);
+            (tx,rx)
+        });
+
         let (min_volt_channel_tx, min_volt_channel_rx) =  channel::<Volt>(0.0);
         let (max_volt_channel_tx, max_volt_channel_rx) =  channel::<Volt>(0.0);
         let (avg_volt_channel_tx, avg_volt_channel_rx) =  channel::<Volt>(0.0);
@@ -61,6 +73,8 @@ impl<const N:usize> BmsLvGui<N> {
         let (max_temp_channel_tx, max_temp_channel_rx) =  channel::<Volt>(0.0);
 
         let tx_channels = std::array::from_fn(|i|channels[i].0.clone());
+        let tx_channel_2 = std::array::from_fn(|i|channel_2[i].0.clone());
+
 
         tokio::spawn(async move{
             let mut cells : [_;N] = std::array::from_fn(|i|BmsCell{ volt: 0.0, rx: channels[i].1.clone() });
@@ -68,9 +82,8 @@ impl<const N:usize> BmsLvGui<N> {
             let mut max_volt= BmsCell{ volt: 0.0, rx: max_volt_channel_rx};
             let mut avg_volt= BmsCell{ volt: 0.0, rx: avg_volt_channel_rx};
             let mut tot_volt= BmsCell{ volt: 0.0, rx: tot_volt_channel_rx};
-            let mut current_amper= BmsCell{ volt: 0.0, rx: current_channel_rx};
-            let mut min_temp= BmsCell{ volt: 0.0, rx: min_temp_channel_rx};
-            let mut max_temp= BmsCell{ volt: 0.0, rx: max_temp_channel_rx};
+            let mut temps : [_;N] = std::array::from_fn(|i|BmsTemp{ temp: 0.0, rx: channel_2[i].1.clone() });
+
 
             let (mut rl, rt) =init()
                 .title(title)
@@ -85,54 +98,33 @@ impl<const N:usize> BmsLvGui<N> {
                 let mut colomn = cell_heidth;
                 let mut d =rl.begin_drawing(&rt);
 
-                let mut current_val = current_amper.volt.to_string();
-                current_val.push_str(" A");
+                for (i, temp) in temps.iter_mut().enumerate() {
+                    let mut temp_val = format!("{:.1}{}", temp.temp, " C");
+                    let mut temp_color = Color::RED;
 
-                let mut min_temp_val = current_amper.volt.to_string();
-                current_val.push_str(" C");
+                    if let Ok(true) = temp.rx.has_changed() {
+                        temp.temp = *temp.rx.borrow_and_update();
+                    }
 
-                let mut max_temp_val = current_amper.volt.to_string();
-                current_val.push_str(" C");
+                    d.clear_background(Color::LIGHTGRAY);
+                    if temp.temp > 15.0 && temp.temp < 58.0 {
+                        temp_color = Color::GREENYELLOW;
+                    }
 
-                if let Ok(true) = min_volt.rx.has_changed() {
-                    min_volt.volt = *min_volt.rx.borrow_and_update();
+                    d.draw_rectangle(row, colomn, cell_width, cell_heidth, temp_color);
+                    d.draw_rectangle_lines(row, colomn, cell_width, cell_heidth, Color::WHITE);
+                    d.draw_text(&temp_val, row + (cell_width/2) - 64, colomn + (cell_heidth/2), 32, Color::BLACK);
+
+                    row+=cell_width;
                 }
 
-                if let Ok(true) = min_temp.rx.has_changed() {
-                    min_temp.volt = *min_temp.rx.borrow_and_update();
-                }
-
-                if let Ok(true) = max_temp.rx.has_changed() {
-                    max_temp.volt = *max_temp.rx.borrow_and_update();
-                }
-
-                d.draw_rectangle(row, colomn, cell_width, cell_heidth, Color::CORAL);
-                d.draw_rectangle_lines(row, colomn, cell_width, cell_heidth, Color::WHITE);
-                d.draw_text("current:", row + (cell_width/2) - 64, colomn, 32, Color::BLACK);
-                d.draw_text(&current_val, row + (cell_width/2) - 64, colomn + (cell_heidth/2), 32, Color::BLACK);
-
-                row+=cell_width;
-
-                d.draw_rectangle(row, colomn, cell_width, cell_heidth, Color::CORAL);
-                d.draw_rectangle_lines(row, colomn, cell_width, cell_heidth, Color::WHITE);
-                d.draw_text("Min temp:", row + (cell_width/2) - 64, colomn, 32, Color::BLACK);
-                d.draw_text(&min_temp_val, row + (cell_width/2) - 64, colomn + (cell_heidth/2), 32, Color::BLACK);
-
-                row+=cell_width;
-
-                d.draw_rectangle(row, colomn, cell_width, cell_heidth, Color::CORAL);
-                d.draw_rectangle_lines(row, colomn, cell_width, cell_heidth, Color::WHITE);
-                d.draw_text("Max temp:", row + (cell_width/2) - 64, colomn, 32, Color::BLACK);
-                d.draw_text(&max_temp_val, row + (cell_width/2) - 64, colomn + (cell_heidth/2), 32, Color::BLACK);
 
                 colomn += cell_heidth;
                 row=0;
                 for cell in cells.iter_mut()
                 {
                     let mut cell_color = Color::RED;
-                    let mut volt_val = cell.volt
-                        .to_string();
-                    volt_val.push_str(" mV");
+                    let mut volt_val = format!("{:.1}{}", cell.volt, " mV");
 
                     if let Ok(true) = cell.rx.has_changed() {
                         cell.volt = *cell.rx.borrow_and_update();
@@ -142,7 +134,7 @@ impl<const N:usize> BmsLvGui<N> {
                     if cell.volt > 3200.0 && cell.volt < 4250.0 {
                         cell_color = Color::GREEN;
                     }
-                    d.draw_text("Bms Lv Volts", 300, 50, 32, Color::BLACK);
+                    d.draw_text("Bms Lv Voltages & Temperatures", 130, 50, 32, Color::BLACK);
 
                     d.draw_rectangle(row, colomn, cell_width, cell_heidth, cell_color);
                     d.draw_rectangle_lines(row, colomn, cell_width, cell_heidth, Color::WHITE);
@@ -154,14 +146,10 @@ impl<const N:usize> BmsLvGui<N> {
                     }
                 }
 
-                let mut min_volt_val = min_volt.volt.to_string();
-                min_volt_val.push_str(" mV");
-                let mut max_volt_val = max_volt.volt.to_string();
-                max_volt_val.push_str(" mV");
-                let mut avg_volt_val = avg_volt.volt.to_string();
-                avg_volt_val.push_str(" mV");
-                let mut tot_volt_val = tot_volt.volt.to_string();
-                tot_volt_val.push_str(" mV");
+                let mut min_volt_val = format!("{:.1}{}", min_volt.volt, " mV");
+                let mut max_volt_val = format!("{:.1}{}", max_volt.volt, " mV");
+                let mut avg_volt_val = format!("{:.1}{}", avg_volt.volt, " mV");
+                let mut tot_volt_val = format!("{:.2}{}", tot_volt.volt, " V");
 
                 if let Ok(true) = min_volt.rx.has_changed() {
                     min_volt.volt = *min_volt.rx.borrow_and_update();
@@ -181,28 +169,28 @@ impl<const N:usize> BmsLvGui<N> {
 
                 d.draw_rectangle(row, colomn, cell_width, cell_heidth, Color::CORAL);
                 d.draw_rectangle_lines(row, colomn, cell_width, cell_heidth, Color::WHITE);
-                d.draw_text("Min volts:", row + (cell_width/2) - 64, colomn, 32, Color::BLACK);
+                d.draw_text("Min volt:", row + (cell_width/2) - 64, colomn, 32, Color::BLACK);
                 d.draw_text(&min_volt_val, row + (cell_width/2) - 64, colomn + (cell_heidth/2), 32, Color::BLACK);
 
                 row+=cell_width;
 
                 d.draw_rectangle(row, colomn, cell_width, cell_heidth, Color::CORAL);
                 d.draw_rectangle_lines(row, colomn, cell_width, cell_heidth, Color::WHITE);
-                d.draw_text("Max volts:", row + (cell_width/2) - 64, colomn, 32, Color::BLACK);
+                d.draw_text("Max volt:", row + (cell_width/2) - 64, colomn, 32, Color::BLACK);
                 d.draw_text(&max_volt_val, row + (cell_width/2) - 64, colomn + (cell_heidth/2), 32, Color::BLACK);
 
                 row+=cell_width;
 
                 d.draw_rectangle(row, colomn, cell_width, cell_heidth, Color::CORAL);
                 d.draw_rectangle_lines(row, colomn, cell_width, cell_heidth, Color::WHITE);
-                d.draw_text("Avg volts:", row + (cell_width/2) - 64, colomn, 32, Color::BLACK);
+                d.draw_text("Avg volt:", row + (cell_width/2) - 64, colomn, 32, Color::BLACK);
                 d.draw_text(&avg_volt_val, row + (cell_width/2) - 64, colomn + (cell_heidth/2), 32, Color::BLACK);
 
                 row+=cell_width;
 
                 d.draw_rectangle(row, colomn, cell_width, cell_heidth, Color::CORAL);
                 d.draw_rectangle_lines(row, colomn, cell_width, cell_heidth, Color::WHITE);
-                d.draw_text("Tot volts:", row + (cell_width/2) - 64, colomn, 32, Color::BLACK);
+                d.draw_text("Tot volt:", row + (cell_width/2) - 64, colomn, 32, Color::BLACK);
                 d.draw_text(&tot_volt_val, row + (cell_width/2) - 64, colomn + (cell_heidth/2), 32, Color::BLACK);
 
             }
@@ -212,6 +200,7 @@ impl<const N:usize> BmsLvGui<N> {
         Self
         {
             tx_channels,
+            tx_channel_2,
             min_volt_tx: min_volt_channel_tx,
             max_volt_tx: max_volt_channel_tx,
             avg_volt_tx: avg_volt_channel_tx,
@@ -256,11 +245,12 @@ impl<const N:usize> BmsLvGui<N> {
         
     }
 
-    pub fn update(&mut self){
+    pub fn update_temp(&mut self, temp_index: usize, temp: Temp){
+        let _ =self.tx_channel_2[temp_index].send(temp);
+        
+    }
 
-        fn get_mv(raw: f32) -> f32{
-            raw/10.0
-        }
+    pub fn update(&mut self){
 
         let cell_enable = BmsLvCellControl::new(true).ok().unwrap();
         let id = socketcan::StandardId::new(BmsLvCellControl::MESSAGE_ID.try_into().unwrap()).unwrap();
@@ -278,22 +268,22 @@ impl<const N:usize> BmsLvGui<N> {
                     if let Ok(mex) = mex {
                         match mex {
                             Messages::BmsLvCell1(data) => {
-                                self.update_cell(0, get_mv(data.cell_0()));
-                                self.update_cell(1, get_mv(data.cell_1()));
-                                self.update_cell(2, get_mv(data.cell_2()));
-                                self.update_cell(3, get_mv(data.cell_3()));
+                                self.update_cell(0, data.cell_0());
+                                self.update_cell(1, data.cell_1());
+                                self.update_cell(2, data.cell_2());
+                                self.update_cell(3, data.cell_3());
                             },
                             Messages::BmsLvCell2(data) => {
-                                self.update_cell(4, get_mv(data.cell_4()));
-                                self.update_cell(5, get_mv(data.cell_5()));
-                                self.update_cell(6, get_mv(data.cell_6()));
-                                self.update_cell(7, get_mv(data.cell_7()));
+                                self.update_cell(4, data.cell_4());
+                                self.update_cell(5, data.cell_5());
+                                self.update_cell(6, data.cell_6());
+                                self.update_cell(7, data.cell_7());
                             },
                             Messages::BmsLvCell3(data) => {
-                                self.update_cell(8, get_mv(data.cell_8()));
-                                self.update_cell(9, get_mv(data.cell_9()));
-                                self.update_cell(10, get_mv(data.cell_10()));
-                                self.update_cell(11, get_mv(data.cell_12()));
+                                self.update_cell(8, data.cell_8());
+                                self.update_cell(9, data.cell_9());
+                                self.update_cell(10, data.cell_10());
+                                self.update_cell(11, data.cell_12());
                             },
                             Messages::BmsLv1(data) =>
                             {
@@ -302,11 +292,13 @@ impl<const N:usize> BmsLvGui<N> {
                                 self.update_avg_volt(data.avg_volt());
                                 self.update_tot_volt(data.tot_volt());
                             },
-                            Messages::BmsLv2(data) =>
+                            Messages::BmsLvTemps(data) =>
                             {
-                                self.update_current(data.current());
-                                data.max_temp();
-                                data.min_temp();
+                                self.update_temp(0, data.temp_0());
+                                self.update_temp(1, data.temp_1());
+                                self.update_temp(2, data.temp_2());
+                                self.update_temp(3, data.temp_3());
+
                             },
                             _ => println!("ignored mex"),
                         };
